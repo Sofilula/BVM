@@ -1,0 +1,788 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>DC OVO – Batman Rooftops v4</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body {
+    margin: 0;
+    background: #05060a;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+  }
+
+  .wrapper {
+    margin: 16px;
+    background: #0b0c12;
+    border-radius: 12px;
+    padding: 10px;
+    box-shadow: 0 0 0 3px #ff2f92, 0 0 0 6px #f7c948;
+    max-width: 980px;
+    width: 100%;
+  }
+
+  #game {
+    position: relative;
+    width: 960px;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+
+  canvas {
+    width: 100%;
+    height: auto;
+    display: block;
+    background: linear-gradient(#0d47a1, #000);
+    border-radius: 8px;
+  }
+
+  #lives {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: flex;
+    gap: 8px;
+    z-index: 2;
+  }
+
+  .batlife {
+    width: 34px;
+    height: 26px;
+    background: url('data:image/svg+xml;utf8,<svg width="60" height="40" xmlns="http://www.w3.org/2000/svg"><path d="M5 20 L15 5 L25 15 L30 5 L35 15 L45 5 L55 20 L45 30 L30 35 L15 30 Z" fill="black" stroke="gold" stroke-width="3"/></svg>');
+    background-size: contain;
+    background-repeat: no-repeat;
+  }
+
+  .batlife.empty {
+    opacity: 0.25;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    color: white;
+    font-size: 2rem;
+    z-index: 3;
+    border-radius: 8px;
+  }
+
+  .overlay.visible {
+    display: flex;
+  }
+
+  .overlay button {
+    margin-top: 16px;
+    padding: 8px 18px;
+    background: #ff2f92;
+    border: 3px solid #ffd400;
+    border-radius: 10px;
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+
+  .controls {
+    margin-top: 10px;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .controls-column {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .controls-row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .btn {
+    width: 70px;
+    height: 70px;
+    border-radius: 18px;
+    background: #ff2f92;
+    border: 4px solid #ffd400;
+    box-shadow: 0 5px 0 #b0003a;
+    font-size: 1.8rem;
+    font-weight: 900;
+    color: #fff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    user-select: none;
+  }
+
+  .btn.alt {
+    background: #ffffff;
+    color: #111;
+    border-color: #ff2f92;
+    box-shadow: 0 5px 0 #ff9acb;
+  }
+
+  .btn:active {
+    transform: translateY(3px);
+    box-shadow: 0 2px 0 rgba(0,0,0,0.5);
+  }
+
+  .label {
+    font-size: 0.75rem;
+    color: #f5f5f5;
+  }
+
+  .combat-btns {
+    display: none;
+    gap: 6px;
+  }
+
+  .combat-btns.visible {
+    display: flex;
+  }
+
+  @media (max-width: 700px) {
+    .btn {
+      width: 60px;
+      height: 60px;
+      font-size: 1.5rem;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div id="game">
+    <canvas id="canvas" width="960" height="540"></canvas>
+
+    <div id="lives">
+      <div class="batlife" id="life1"></div>
+      <div class="batlife" id="life2"></div>
+      <div class="batlife" id="life3"></div>
+    </div>
+
+    <div class="overlay" id="gameover">
+      <div>BATMAN HAS FALLEN</div>
+      <button id="retry">Retry</button>
+    </div>
+
+    <div class="overlay" id="levelcomplete">
+      <div>LEVEL COMPLETE</div>
+      <button id="restartLevel">Play Again</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="controls-column">
+      <div class="controls-row">
+        <div class="btn" id="btn-left">&lt;</div>
+        <div class="btn" id="btn-right">&gt;</div>
+      </div>
+      <div class="label">Move</div>
+    </div>
+
+    <div class="controls-column">
+      <div class="controls-row">
+        <div class="btn" id="btn-up">↑</div>
+        <div class="btn" id="btn-down">↓</div>
+      </div>
+      <div class="combat-btns" id="combat-buttons">
+        <div class="btn" id="btn-punch">P</div>
+        <div class="btn alt" id="btn-rang">B</div>
+      </div>
+      <div class="label">Jump / Drop / Combat</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+let keys = { left:false, right:false, up:false, down:false, punch:false, rang:false };
+
+function bindButton(id, key) {
+  const el = document.getElementById(id);
+  el.addEventListener("touchstart", e => { e.preventDefault(); keys[key] = true; });
+  el.addEventListener("touchend", e => { e.preventDefault(); keys[key] = false; });
+  el.addEventListener("mousedown", () => keys[key] = true);
+  el.addEventListener("mouseup", () => keys[key] = false);
+  el.addEventListener("mouseleave", () => keys[key] = false);
+}
+
+bindButton("btn-left","left");
+bindButton("btn-right","right");
+bindButton("btn-up","up");
+bindButton("btn-down","down");
+bindButton("btn-punch","punch");
+bindButton("btn-rang","rang");
+
+window.addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft" || e.key === "a") keys.left = true;
+  if (e.key === "ArrowRight" || e.key === "d") keys.right = true;
+  if (e.key === "ArrowUp" || e.key === "w") keys.up = true;
+  if (e.key === "ArrowDown" || e.key === "s") keys.down = true;
+  if (e.key === "j") keys.punch = true;
+  if (e.key === "k") keys.rang = true;
+});
+window.addEventListener("keyup", e => {
+  if (e.key === "ArrowLeft" || e.key === "a") keys.left = false;
+  if (e.key === "ArrowRight" || e.key === "d") keys.right = false;
+  if (e.key === "ArrowUp" || e.key === "w") keys.up = false;
+  if (e.key === "ArrowDown" || e.key === "s") keys.down = false;
+  if (e.key === "j") keys.punch = false;
+  if (e.key === "k") keys.rang = false;
+});
+
+const world = {
+  width: 3400,
+  height: 540
+};
+
+let cameraX = 0;
+
+let player = {
+  x: 120,
+  y: 300,
+  w: 40,
+  h: 90,
+  vx: 0,
+  vy: 0,
+  speed: 0.9,
+  jump: -18,
+  gravity: 0.9,
+  onGround: false,
+  lives: 3,
+  punchTimer: 0,
+  facing: 1,
+  rangs: [],
+  sliding: false,
+  slideTimer: 0,
+  dropThroughTimer: 0
+};
+
+const level = {
+  platforms: [
+    {x:0, y:500, w:3400, h:40, oneWay:false},
+
+    {x:220, y:420, w:160, h:12, oneWay:true},
+    {x:520, y:360, w:160, h:12, oneWay:true},
+    {x:820, y:320, w:160, h:12, oneWay:true},
+    {x:1120, y:280, w:160, h:12, oneWay:true},
+    {x:1420, y:340, w:160, h:12, oneWay:true},
+    {x:1720, y:300, w:160, h:12, oneWay:true},
+    {x:2020, y:260, w:160, h:12, oneWay:true},
+    {x:2320, y:320, w:160, h:12, oneWay:true},
+    {x:2620, y:280, w:160, h:12, oneWay:true},
+    {x:2920, y:340, w:160, h:12, oneWay:true}
+  ],
+  movingPlatforms: [
+    {x:650, y:430, w:120, h:14, oneWay:true, range:80, speed:1.5, dir:1, baseY:430},
+    {x:1850, y:360, w:120, h:14, oneWay:true, range:120, speed:2.0, dir:1, baseY:360},
+    {x:3100, y:260, w:120, h:14, oneWay:true, range:90, speed:1.8, dir:1, baseY:260}
+  ],
+  disappearingPlatforms: [
+    {x:980, y:380, w:120, h:12, oneWay:true, timer:0, visible:true},
+    {x:1280, y:330, w:120, h:12, oneWay:true, timer:0, visible:true},
+    {x:2180, y:290, w:120, h:12, oneWay:true, timer:0, visible:true}
+  ],
+  spikes: [
+    {x:380, y:480, w:80, h:20},
+    {x:900, y:480, w:120, h:20},
+    {x:1500, y:480, w:120, h:20},
+    {x:2100, y:480, w:120, h:20},
+    {x:2450, y:480, w:160, h:20},
+    {x:2800, y:480, w:160, h:20},
+    {x:3200, y:480, w:120, h:20}
+  ],
+  enemies: [
+    {x:600, y:460, w:40, h:70, hp:3},
+    {x:1300, y:460, w:40, h:70, hp:3},
+    {x:1900, y:460, w:40, h:70, hp:4},
+    {x:2600, y:460, w:40, h:70, hp:4}
+  ],
+  finish: {x:3250, y:220, w:40, h:80}
+};
+
+let gameState = "play";
+const combatButtons = document.getElementById("combat-buttons");
+
+function drawBackground() {
+  const w = canvas.width;
+  const h = canvas.height;
+
+  const grad = ctx.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0,"#0d47a1");
+  grad.addColorStop(0.5,"#111827");
+  grad.addColorStop(1,"#020617");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,w,h);
+
+  ctx.fillStyle = "#111827";
+  for (let i=0;i<18;i++) {
+    const bw = 60 + Math.random()*80;
+    const bh = 80 + Math.random()*140;
+    const bx = i*160 - (cameraX*0.3 % 160);
+    const by = 200 - bh/2;
+    ctx.fillRect(bx,by,bw,bh);
+  }
+
+  ctx.fillStyle = "#020617";
+  ctx.fillRect(0,500,w,40);
+}
+
+function drawPlatforms() {
+  ctx.fillStyle = "#222831";
+  level.platforms.forEach(p => {
+    const sx = p.x - cameraX;
+    if (sx + p.w < 0 || sx > canvas.width) return;
+    ctx.fillRect(sx, p.y, p.w, p.h);
+  });
+
+  level.movingPlatforms.forEach(p => {
+    const sx = p.x - cameraX;
+    if (sx + p.w < 0 || sx > canvas.width) return;
+    ctx.fillStyle = "#374151";
+    ctx.fillRect(sx, p.y, p.w, p.h);
+  });
+
+  level.disappearingPlatforms.forEach(p => {
+    if (!p.visible) return;
+    const sx = p.x - cameraX;
+    if (sx + p.w < 0 || sx > canvas.width) return;
+    ctx.fillStyle = "#6b21a8";
+    ctx.fillRect(sx, p.y, p.w, p.h);
+  });
+
+  level.spikes.forEach(s => {
+    const sx = s.x - cameraX;
+    if (sx + s.w < 0 || sx > canvas.width) return;
+    ctx.fillStyle = "#b91c1c";
+    ctx.fillRect(sx, s.y, s.w, s.h);
+    ctx.fillStyle = "#f97316";
+    const spikesCount = Math.floor(s.w / 20);
+    for (let i=0;i<spikesCount;i++) {
+      const x0 = sx + i*20;
+      ctx.beginPath();
+      ctx.moveTo(x0, s.y);
+      ctx.lineTo(x0+10, s.y-18);
+      ctx.lineTo(x0+20, s.y);
+      ctx.closePath();
+      ctx.fill();
+    }
+  });
+
+  const f = level.finish;
+  const fx = f.x - cameraX;
+  if (fx + f.w >= 0 && fx <= canvas.width) {
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(fx, f.y, f.w, f.h);
+    ctx.fillStyle = "#f97316";
+    ctx.fillRect(fx+8, f.y-24, f.w-16, 24);
+    ctx.fillStyle = "rgba(250,204,21,0.4)";
+    ctx.beginPath();
+    ctx.moveTo(fx+f.w/2, f.y-80);
+    ctx.lineTo(fx-40, f.y);
+    ctx.lineTo(fx+f.w+40, f.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function drawEnemy(e) {
+  const sx = e.x - cameraX;
+  if (sx + e.w < 0 || sx > canvas.width) return;
+  ctx.save();
+  ctx.translate(sx, e.y);
+
+  const s = 1;
+  ctx.fillStyle = "#4a148c";
+  ctx.fillRect(-18*s, -50*s, 36*s, 50*s);
+  ctx.fillStyle = "#f5d6b4";
+  ctx.beginPath();
+  ctx.ellipse(0, -70*s, 16*s, 20*s, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = "#000";
+  ctx.fillRect(-10*s, -76*s, 20*s, 8*s);
+  ctx.fillStyle = "#212121";
+  ctx.fillRect(-14*s, 0, 10*s, 30*s);
+  ctx.fillRect(4*s, 0, 10*s, 30*s);
+  ctx.restore();
+}
+
+function drawBatmanMovieStyle() {
+  const sx = player.x - cameraX;
+  const sy = player.y;
+
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  const s = 1;
+
+  ctx.fillStyle = "#050608";
+  ctx.beginPath();
+  ctx.moveTo(-24*s, -40*s);
+  ctx.quadraticCurveTo(-40*s, 10*s, -20*s, 48*s);
+  ctx.lineTo(20*s, 48*s);
+  ctx.quadraticCurveTo(40*s, 10*s, 24*s, -40*s);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#1f2933";
+  ctx.fillRect(-10*s, 10*s, 8*s, 35*s);
+  ctx.fillRect(2*s, 10*s, 8*s, 35*s);
+
+  ctx.fillStyle = "#050608";
+  ctx.fillRect(-10*s, 40*s, 8*s, 8*s);
+  ctx.fillRect(2*s, 40*s, 8*s, 8*s);
+
+  ctx.fillStyle = "#4b5563";
+  ctx.beginPath();
+  ctx.moveTo(-16*s, -20*s);
+  ctx.lineTo(-20*s, 10*s);
+  ctx.lineTo(20*s, 10*s);
+  ctx.lineTo(16*s, -20*s);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#111827";
+  ctx.beginPath();
+  ctx.moveTo(-9*s, -8*s);
+  ctx.lineTo(-5*s, -12*s);
+  ctx.lineTo(-2*s, -9*s);
+  ctx.lineTo(0, -12*s);
+  ctx.lineTo(2*s, -9*s);
+  ctx.lineTo(5*s, -12*s);
+  ctx.lineTo(9*s, -8*s);
+  ctx.lineTo(5*s, -4*s);
+  ctx.lineTo(0, -2*s);
+  ctx.lineTo(-5*s, -4*s);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#facc15";
+  ctx.fillRect(-18*s, 6*s, 36*s, 4*s);
+  ctx.fillStyle = "#fef3c7";
+  for (let i=-12;i<=12;i+=8) {
+    ctx.fillRect(i*s, 6.5*s, 4*s, 3*s);
+  }
+
+  ctx.fillStyle = "#4b5563";
+  ctx.beginPath();
+  ctx.moveTo(-16*s, -18*s);
+  ctx.lineTo(-26*s, 4*s);
+  ctx.lineTo(-20*s, 8*s);
+  ctx.lineTo(-12*s, -10*s);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(16*s, -18*s);
+  ctx.lineTo(26*s, 4*s);
+  ctx.lineTo(20*s, 8*s);
+  ctx.lineTo(12*s, -10*s);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#050608";
+  ctx.beginPath();
+  ctx.moveTo(-12*s, -40*s);
+  ctx.lineTo(-12*s, -28*s);
+  ctx.quadraticCurveTo(0, -24*s, 12*s, -28*s);
+  ctx.lineTo(12*s, -40*s);
+  ctx.lineTo(6*s, -48*s);
+  ctx.lineTo(0, -44*s);
+  ctx.lineTo(-6*s, -48*s);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#f9d3b4";
+  ctx.fillRect(-8*s, -32*s, 16*s, 8*s);
+
+  ctx.fillStyle = "#e5f4ff";
+  ctx.fillRect(-5*s, -30*s, 4*s, 2*s);
+  ctx.fillRect(1*s, -30*s, 4*s, 2*s);
+
+  if (player.sliding) {
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.beginPath();
+    ctx.ellipse(0, 48*s, 26*s, 6*s, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  if (player.punchTimer > 0) {
+    ctx.strokeStyle = "#ff2f92";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    const dir = player.facing;
+    ctx.arc(12*dir, -10, 42, dir>0 ? -0.4 : Math.PI+0.4, dir>0 ? 0.6 : Math.PI-0.6);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawRangs() {
+  ctx.fillStyle = "#facc15";
+  player.rangs.forEach(r => {
+    const sx = r.x - cameraX;
+    if (sx < -50 || sx > canvas.width+50) return;
+    ctx.save();
+    ctx.translate(sx, r.y);
+    ctx.rotate(r.angle);
+    ctx.fillRect(-12, -3, 24, 6);
+    ctx.restore();
+  });
+}
+
+function drawEnemies() {
+  level.enemies.forEach(e => {
+    if (e.hp > 0) drawEnemy(e);
+  });
+}
+
+function updatePhysics() {
+  if (gameState !== "play") return;
+
+  if (keys.left) { player.vx -= player.speed; player.facing = -1; }
+  if (keys.right) { player.vx += player.speed; player.facing = 1; }
+
+  if (keys.down && player.onGround && Math.abs(player.vx) > 2 && !player.sliding) {
+    player.sliding = true;
+    player.slideTimer = 18;
+  }
+  if (player.sliding) {
+    player.slideTimer--;
+    player.vx *= 1.05;
+    if (player.slideTimer <= 0) player.sliding = false;
+  }
+
+  player.vy += player.gravity;
+
+  if (keys.up && player.onGround) {
+    player.vy = player.jump;
+    player.onGround = false;
+  }
+
+  if (keys.down && !player.sliding) {
+    player.dropThroughTimer = 10;
+  }
+  if (player.dropThroughTimer > 0) player.dropThroughTimer--;
+
+  player.x += player.vx;
+  player.y += player.vy;
+
+  if (!player.sliding) player.vx *= 0.88;
+
+  player.onGround = false;
+
+  level.movingPlatforms.forEach(p => {
+    p.y = p.baseY + Math.sin(Date.now()/400 * p.speed) * p.range * p.dir;
+  });
+
+  const allPlatforms = [
+    ...level.platforms,
+    ...level.movingPlatforms,
+    ...level.disappearingPlatforms.filter(p => p.visible)
+  ];
+
+  allPlatforms.forEach(p => {
+    const withinX = player.x > p.x - player.w/2 && player.x < p.x + p.w + player.w/2;
+    if (!withinX) return;
+
+    if (p.oneWay) {
+      if (player.dropThroughTimer > 0) return;
+      if (player.vy >= 0 &&
+          player.y + player.h/2 > p.y &&
+          player.y + player.h/2 < p.y + p.h) {
+        player.y = p.y - player.h/2;
+        player.vy = 0;
+        player.onGround = true;
+
+        if (level.disappearingPlatforms.includes(p)) {
+          if (p.timer === 0) p.timer = 40;
+        }
+      }
+    } else {
+      if (player.y + player.h/2 > p.y &&
+          player.y - player.h/2 < p.y + p.h) {
+        if (player.vy > 0) {
+          player.y = p.y - player.h/2;
+          player.vy = 0;
+          player.onGround = true;
+        }
+      }
+    }
+  });
+
+  level.disappearingPlatforms.forEach(p => {
+    if (p.timer > 0) {
+      p.timer--;
+      if (p.timer === 0) {
+        p.visible = false;
+        setTimeout(() => {
+          p.visible = true;
+        }, 2000);
+      }
+    }
+  });
+
+  level.spikes.forEach(s => {
+    if (player.x + player.w/2 > s.x &&
+        player.x - player.w/2 < s.x + s.w &&
+        player.y + player.h/2 > s.y - 10) {
+      loseLife();
+    }
+  });
+
+  const f = level.finish;
+  if (player.x + player.w/2 > f.x &&
+      player.x - player.w/2 < f.x + f.w &&
+      player.y + player.h/2 > f.y &&
+      player.y - player.h/2 < f.y + f.h) {
+    gameState = "complete";
+    document.getElementById("levelcomplete").classList.add("visible");
+  }
+
+  if (keys.punch) {
+    player.punchTimer = 10;
+  }
+  if (player.punchTimer > 0) player.punchTimer--;
+
+  if (keys.rang && player.rangs.length < 3) {
+    player.rangs.push({
+      x: player.x + player.facing*30,
+      y: player.y - 20,
+      vx: player.facing*12,
+      angle: 0
+    });
+  }
+
+  player.rangs.forEach(r => {
+    r.x += r.vx;
+    r.angle += 0.4;
+  });
+
+  player.rangs = player.rangs.filter(r => {
+    let alive = true;
+    level.enemies.forEach(e => {
+      if (e.hp <= 0) return;
+      if (r.x > e.x - e.w/2 &&
+          r.x < e.x + e.w/2 &&
+          r.y > e.y - e.h &&
+          r.y < e.y) {
+        e.hp -= 1;
+        alive = false;
+      }
+    });
+    return alive && r.x > -50 && r.x < world.width+50;
+  });
+
+  if (player.punchTimer > 0) {
+    level.enemies.forEach(e => {
+      if (e.hp <= 0) return;
+      const dx = e.x - player.x;
+      const dy = (e.y-40) - player.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 70 && Math.sign(dx) === player.facing) {
+        e.hp -= 0.2;
+      }
+    });
+  }
+
+  level.enemies.forEach(e => {
+    if (e.hp <= 0) return;
+    const dx = player.x - e.x;
+    if (Math.abs(dx) < 50 && Math.abs(player.y - (e.y-40)) < 60) {
+      loseLife();
+    }
+  });
+
+  if (player.y > world.height + 200) {
+    loseLife();
+  }
+
+  cameraX = player.x - canvas.width/2;
+  if (cameraX < 0) cameraX = 0;
+  if (cameraX > world.width - canvas.width) cameraX = world.width - canvas.width;
+
+  let inCombat = false;
+  level.enemies.forEach(e => {
+    if (e.hp <= 0) return;
+    const dx = Math.abs(e.x - player.x);
+    const dy = Math.abs((e.y-40) - player.y);
+    if (dx < 220 && dy < 120) inCombat = true;
+  });
+  combatButtons.classList.toggle("visible", inCombat);
+}
+
+function loseLife() {
+  if (gameState !== "play") return;
+  player.lives--;
+  updateLivesUI();
+  if (player.lives <= 0) {
+    gameState = "dead";
+    document.getElementById("gameover").classList.add("visible");
+  } else {
+    resetPlayerPosition();
+  }
+}
+
+function resetPlayerPosition() {
+  player.x = 120;
+  player.y = 300;
+  player.vx = 0;
+  player.vy = 0;
+  player.sliding = false;
+  player.slideTimer = 0;
+}
+
+function updateLivesUI() {
+  for (let i=1;i<=3;i++) {
+    document.getElementById("life"+i).classList.toggle("empty", i > player.lives);
+  }
+}
+
+document.getElementById("retry").onclick = () => {
+  player.lives = 3;
+  updateLivesUI();
+  resetPlayerPosition();
+  gameState = "play";
+  document.getElementById("gameover").classList.remove("visible");
+};
+
+document.getElementById("restartLevel").onclick = () => {
+  resetPlayerPosition();
+  gameState = "play";
+  document.getElementById("levelcomplete").classList.remove("visible");
+};
+
+function draw() {
+  drawBackground();
+  drawPlatforms();
+  drawRangs();
+  drawEnemies();
+  drawBatmanMovieStyle();
+}
+
+function loop() {
+  updatePhysics();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+updateLivesUI();
+loop();
+</script>
+</body>
+</html>
